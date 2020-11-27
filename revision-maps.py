@@ -47,6 +47,9 @@ def required_nodes(
 def topological_sort(
     revision_map: Dict[str, Revision], revisions: FrozenSet[str]
 ) -> List[str]:
+    # TODO use sqlalchemy.util.topological.sort
+    # Presumably someone has thought this one through a bit better than I have!
+
     # subgraph points from revision to its dependencies
     dependencies = {
         revision: {
