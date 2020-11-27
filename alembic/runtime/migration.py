@@ -508,6 +508,7 @@ class MigrationContext(object):
             not self.as_sql and self._in_connection_transaction()
         )
 
+        # Generator of functions to run???
         for step in self._migrations_fn(heads, self):
             with self.begin_transaction(_per_migration=True):
                 if self.as_sql and not head_maintainer.heads:
@@ -519,6 +520,8 @@ class MigrationContext(object):
                     self.impl.static_output(
                         "-- Running %s" % (step.short_log,)
                     )
+                # Run the migration functions. I assume these are upgrade/downgrade
+                # from the alembic environment scripts???
                 step.migration_fn(**kw)
 
                 # previously, we wouldn't stamp per migration

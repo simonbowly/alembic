@@ -385,6 +385,24 @@ class ScriptDirectory(object):
                 for script in revs
             ]
 
+    # Just need an equivalent for `alembic checkout` that customises the series
+    # of Script() objects (which just point to files) and runs downgrades then
+    # upgrades as needed?
+    #
+    # The RevisionMap object gives the required info?
+
+    def _checkout_revs(self, destination, current_rev):
+        # Compute a path of upgrades and downgrades something like this?
+        revs = [
+            migration.MigrationStep.downgrade_from_script(
+                self.revision_map, self.revision_map._revision_map['original_head'],
+            ),
+            migration.MigrationStep.upgrade_from_script(
+                self.revision_map, self.revision_map._revision_map['new_head'],
+            ),
+        ]
+        return revs
+
     def _stamp_revs(self, revision, heads):
         with self._catch_revision_errors(
             multiple_heads="Multiple heads are present; please specify a "
