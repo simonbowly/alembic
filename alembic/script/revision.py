@@ -925,8 +925,9 @@ class RevisionMap(object):
         children = self.get_revisions(start.down_revision)
         if len(children) == 0:
             raise util.CommandError(
-                f"Relative revision {label} didn't produce "
-                f"{abs(int(label))} migrations"
+                "Relative revision %(label)s didn't produce "
+                "%(abslabel)s migrations"
+                % {"label": label, "abslabel": abs(int(label))}
             )
         assert len(children) == 1
         return self.walk_down(next(iter(children)), steps + 1, label)
@@ -981,7 +982,7 @@ class RevisionMap(object):
         drop_reverse_topo_sorted = list(
             reversed(list(self.topological_sort(drop_revisions)))
         )
-        yield from self.get_revisions(drop_reverse_topo_sorted)
+        return self.get_revisions(drop_reverse_topo_sorted)
 
     def _parse_downgrade(self, upper, lower):
         # Parse lower: target revision + branch labels.
@@ -1009,7 +1010,7 @@ class RevisionMap(object):
                 return branch_label, self.get_revision(symbol)
             else:
                 return None, self.get_revision(lower)
-        raise ValueError(f"Failed to parse downgrade input '{lower}'")
+        raise ValueError("Failed to parse downgrade input '%s'" % (lower))
 
     def _iterate_revisions(
         self,
@@ -1061,7 +1062,8 @@ class RevisionMap(object):
             # Ensure we didn't throw everything away.
             assert len(roots) > 0, "No revisions identified to downgrade."
 
-            yield from self._drop_inclusive(roots, upper)
+            for rev in self._drop_inclusive(roots, upper):
+                yield rev
             return
 
         requested_lowers = self.get_revisions(lower)
