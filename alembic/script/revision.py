@@ -1,5 +1,6 @@
 import collections
 import re
+import warnings
 
 from sqlalchemy import util as sqlautil
 
@@ -1000,7 +1001,12 @@ class RevisionMap(object):
                 else:
                     if symbol is None:
                         uppers = util.to_tuple(upper)
-                        assert len(uppers) == 1
+                        if len(uppers) > 1:
+                            warnings.warn(
+                                "Deprecated: downgrade-1 from multiple "
+                                "heads is ambiguous",
+                                DeprecationWarning,
+                            )
                         symbol = uppers[0]
                     return branch_label, self.walk_down(
                         symbol, rel_int, relative
