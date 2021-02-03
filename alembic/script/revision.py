@@ -1002,6 +1002,11 @@ class RevisionMap(object):
                     if symbol is None:
                         uppers = util.to_tuple(upper)
                         if len(uppers) > 1:
+                            assert len(set(uppers)) == len(
+                                uppers
+                            ), ":uppers contains duplicate entries %s" % str(
+                                uppers
+                            )
                             warnings.warn(
                                 "Deprecated: downgrade-1 from multiple "
                                 "heads is ambiguous",
