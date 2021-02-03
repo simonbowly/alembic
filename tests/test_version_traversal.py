@@ -1,11 +1,10 @@
-import pytest
-
 from alembic import util
 from alembic.migration import HeadMaintainer
 from alembic.migration import MigrationStep
 from alembic.testing import assert_raises_message
 from alembic.testing import eq_
 from alembic.testing import mock
+from alembic.testing.assertions import _expect_warnings
 from alembic.testing.env import clear_staging_env
 from alembic.testing.env import staging_env
 from alembic.testing.fixtures import TestBase
@@ -362,23 +361,29 @@ class BranchedPathTest(MigrationTest):
     # This should probably fail (ambiguous) but is currently documented
     # as a key use case in branching.
 
-    @pytest.mark.xfail
     def test_downgrade_once_order_right(self):
-        self._assert_downgrade(
-            "-1",
-            [self.d2.revision, self.d1.revision],
-            [self.down_(self.d2)],
-            set([self.d1.revision, self.c2.revision]),
-        )
+        with _expect_warnings(
+            DeprecationWarning,
+            ["Deprecated: downgrade-1 from multiple heads is ambiguous"],
+        ):
+            self._assert_downgrade(
+                "-1",
+                [self.d2.revision, self.d1.revision],
+                [self.down_(self.d2)],
+                set([self.d1.revision, self.c2.revision]),
+            )
 
-    @pytest.mark.xfail
     def test_downgrade_once_order_left(self):
-        self._assert_downgrade(
-            "-1",
-            [self.d1.revision, self.d2.revision],
-            [self.down_(self.d2)],
-            set([self.d1.revision, self.c2.revision]),
-        )
+        with _expect_warnings(
+            DeprecationWarning,
+            ["Deprecated: downgrade-1 from multiple heads is ambiguous"],
+        ):
+            self._assert_downgrade(
+                "-1",
+                [self.d1.revision, self.d2.revision],
+                [self.down_(self.d1)],
+                set([self.d2.revision, self.c1.revision]),
+            )
 
     # Captures https://github.com/sqlalchemy/alembic/issues/765
 
