@@ -917,44 +917,52 @@ class RevisionMap(object):
     def walk_down(self, start, steps, label):
         """ Walk down the tree along a single path. """
         assert steps <= 0
+
         if isinstance(start, compat.string_types):
             start = self.get_revision(start)
-        if steps == 0:
-            return start
-        if start is None:
-            raise ValueError("Can't walk back past base.")
-        children = self.get_revisions(start.down_revision)
-        if len(children) == 0:
-            raise util.CommandError(
-                "Relative revision %(label)s didn't produce "
-                "%(abslabel)s migrations"
-                % {"label": label, "abslabel": abs(int(label))}
-            )
-        assert len(children) == 1
-        return self.walk_down(next(iter(children)), steps + 1, label)
 
-    def walk(self, start, steps, branch_label):
+        for i in range(abs(steps)):
+            assert start is not None, "Walked past the base"
+            children = self.get_revisions(start.down_revision)
+            if len(children) == 0:
+                raise util.CommandError(
+                    "Relative revision %(label)s didn't produce "
+                    "%(abslabel)s migrations"
+                    % {"label": label, "abslabel": abs(int(label))}
+                )
+            assert len(children) == 1, "Can't walk across a merge"
+            start = children[0]
+
+        return start
+
+    def walk_up(self, start, steps, branch_label):
         """ Walk up the tree along a single path. """
         assert steps >= 0
+
         if isinstance(start, compat.string_types):
             start = self.get_revision(start)
-        if steps == 0:
-            return start
-        if start is None:
-            roots = [
-                rev
-                for rev in self._revision_map.values()
-                if rev is not None and rev.down_revision is None
-            ]
-            assert len(roots) == 1
-            return self.walk(roots[0], steps - 1, branch_label)
-        children = [
-            rev
-            for rev in self.get_revisions(start.nextrev)
-            if branch_label is None or branch_label in rev.branch_labels
-        ]
-        assert len(children) == 1
-        return self.walk(next(iter(children)), steps - 1, branch_label)
+
+        for i in range(steps):
+            if start is None:
+                children = [
+                    rev
+                    for rev in self._revision_map.values()
+                    if rev is not None and rev.down_revision is None
+                ]
+                # Should this be handled/can multi-roots be labelled?
+                assert len(children) == 1, "No unambiguous revision"
+            else:
+                children = [
+                    rev
+                    for rev in self.get_revisions(start.nextrev)
+                    if branch_label is None
+                    or branch_label in rev.branch_labels
+                ]
+                # This shouldn't occur unless branch labels are duplicated?
+                assert len(children) == 1, "No unambiguous revision"
+            start = children[0]
+
+        return start
 
     def _drop_inclusive(self, branch_revision, upper):
         # Aim then is to drop :branch_revision; to do so we also need
@@ -995,7 +1003,7 @@ class RevisionMap(object):
                 branch_label, symbol, relative = match.groups()
                 rel_int = int(relative)
                 if rel_int >= 0:
-                    return branch_label, self.walk(
+                    return branch_label, self.walk_up(
                         symbol, rel_int, branch_label
                     )
                 else:
