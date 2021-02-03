@@ -773,12 +773,16 @@ class RevisionMap(object):
         """
 
         if select_for_downgrade:
-            return self._iterate_revisions(
-                upper,
-                lower,
-                inclusive=inclusive,
-                implicit_base=implicit_base,
-                select_for_downgrade=select_for_downgrade,
+            # Discarded options.
+            assert assert_relative_length, (
+                "assert_relative_length + select_for_downgrade "
+                "in iterate_revisions"
+            )
+            assert (
+                not implicit_base
+            ), "implicit_base + select_for_downgrade in iterate_revisions"
+            return self._iterate_revisions_downgrade(
+                upper, lower, inclusive=inclusive
             )
 
         relative_upper = self._relative_iterate(
@@ -1031,6 +1035,49 @@ class RevisionMap(object):
                 return None, self.get_revision(lower)
         raise ValueError("Failed to parse downgrade input '%s'" % (lower))
 
+    def _iterate_revisions_downgrade(self, upper, lower, inclusive=False):
+
+        branch_label, target_revision = self._parse_downgrade(upper, lower)
+
+        # Find candidates to drop.
+        if target_revision is None:
+            # Downgrading back to base: find all tree roots.
+            roots = [
+                rev
+                for rev in self._revision_map.values()
+                if rev is not None and rev.down_revision is None
+            ]
+        else:
+            if inclusive:
+                # inclusive implies this revision should be dropped
+                roots = [target_revision]
+            else:
+                # Downgrading to fixed target: find all direct children.
+                roots = list(self.get_revisions(target_revision.nextrev))
+
+        if branch_label and len(roots) > 1:
+            # Need to filter roots.
+            ancestors = {
+                rev.revision
+                for rev in self._get_ancestor_nodes(
+                    [self._resolve_branch(branch_label)],
+                    include_dependencies=False,
+                )
+            }
+            # Intersection gives the root revisions we are trying to
+            # rollback with the downgrade.
+            roots = list(
+                self.get_revisions(
+                    {rev.revision for rev in roots}.intersection(ancestors)
+                )
+            )
+
+        # Ensure we didn't throw everything away.
+        assert len(roots) > 0, "No revisions identified to downgrade."
+
+        for rev in self._drop_inclusive(roots, upper):
+            yield rev
+
     def _iterate_revisions(
         self,
         upper,
@@ -1045,45 +1092,9 @@ class RevisionMap(object):
         across branches as a whole.
 
         """
-
-        if select_for_downgrade:
-
-            branch_label, target_revision = self._parse_downgrade(upper, lower)
-            # Find candidates to drop.
-            if target_revision is None:
-                # Downgrading back to base: find all tree roots.
-                roots = [
-                    rev
-                    for rev in self._revision_map.values()
-                    if rev is not None and rev.down_revision is None
-                ]
-            else:
-                # Downgrading to fixed target: find all direct children.
-                roots = list(self.get_revisions(target_revision.nextrev))
-
-            if branch_label and len(roots) > 1:
-                # Need to filter roots.
-                ancestors = {
-                    rev.revision
-                    for rev in self._get_ancestor_nodes(
-                        [self._resolve_branch(branch_label)],
-                        include_dependencies=False,
-                    )
-                }
-                # Intersection gives the root revisions we are trying to
-                # rollback with the downgrade.
-                roots = list(
-                    self.get_revisions(
-                        {rev.revision for rev in roots}.intersection(ancestors)
-                    )
-                )
-
-            # Ensure we didn't throw everything away.
-            assert len(roots) > 0, "No revisions identified to downgrade."
-
-            for rev in self._drop_inclusive(roots, upper):
-                yield rev
-            return
+        assert (
+            not select_for_downgrade
+        ), "select_for_downgrade in _iterate_revisions"
 
         requested_lowers = self.get_revisions(lower)
 
