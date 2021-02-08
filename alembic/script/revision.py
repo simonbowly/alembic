@@ -785,6 +785,12 @@ class RevisionMap(object):
                 upper, lower, inclusive=inclusive
             )
 
+        result = util.to_tuple(
+            self._parse_upgrade_target(current_revisions=lower, target=upper)
+        )
+        assert result is not None
+        assert type(result) is tuple, f"{type(result)=}"
+
         relative_upper = self._relative_iterate(
             upper,
             lower,
@@ -918,7 +924,7 @@ class RevisionMap(object):
         ]
         return sqlautil.topological.sort(edges, allitems)
 
-    def walk_down(self, start, steps, label):
+    def walk_down(self, start, steps, label=None):
         """ Walk down the tree along a single path. """
         assert steps <= 0
 
@@ -929,6 +935,7 @@ class RevisionMap(object):
             assert start is not None, "Walked past the base"
             children = self.get_revisions(start.down_revision)
             if len(children) == 0:
+                # Fixme error message emitted from wrong function.
                 raise util.CommandError(
                     "Relative revision %(label)s didn't produce "
                     "%(abslabel)s migrations"
@@ -948,22 +955,29 @@ class RevisionMap(object):
 
         for i in range(steps):
             if start is None:
-                children = [
+                candidates = (
                     rev
                     for rev in self._revision_map.values()
                     if rev is not None and rev.down_revision is None
-                ]
-                # Should this be handled/can multi-roots be labelled?
-                assert len(children) == 1, "No unambiguous revision"
+                )
             else:
-                children = [
-                    rev
-                    for rev in self.get_revisions(start.nextrev)
-                    if branch_label is None
-                    or branch_label in rev.branch_labels
-                ]
-                # This shouldn't occur unless branch labels are duplicated?
-                assert len(children) == 1, "No unambiguous revision"
+                candidates = self.get_revisions(start.nextrev)
+            children = [
+                rev
+                for rev in candidates
+                if (branch_label is None or branch_label in rev.branch_labels)
+            ]
+            # This shouldn't fire unless branch labels are duplicated?
+            assert len(children) <= 1, "No unambiguous revision"
+            if len(children) == 0:
+                # Fixme error message emitted from wrong function.
+                raise util.CommandError(
+                    "Relative revision +%(steps)d didn't produce "
+                    "%(steps)d migrations"
+                    % {
+                        "steps": steps,
+                    }
+                )
             start = children[0]
 
         return start
@@ -997,47 +1011,109 @@ class RevisionMap(object):
         )
         return self.get_revisions(drop_reverse_topo_sorted)
 
-    def _parse_downgrade(self, upper, lower):
-        # Parse lower: target revision + branch labels.
-        if lower is None:
+    def _parse_downgrade_target(self, current_revisions, target):
+        """Parse downgrade command syntax :target to retrieve the target
+        revision and branch label (if any) given the :current_revisons stamp
+        of the database.
+
+        Returns a tuple (branch_label, target_revision) where branch_label
+        is a string from the command specifying the branch to consider (or
+        None if no branch given), and target_revision is a Revision object
+        which the command refers to. target_revsions is None if the command
+        refers to 'base'. The target may be specified in absolute form, or
+        relative to :current_revisions.
+
+        To test: relative syntax to get back to base? e.g. branch1@-3 where
+        branch1 has a 3-length path to base.
+        """
+        if target is None:
             return None, None
-        if isinstance(lower, compat.string_types):
-            match = _relative_destination.match(lower)
+        assert isinstance(
+            target, compat.string_types
+        ), "Expected downgrade target in string form"
+        match = _relative_destination.match(target)
+        if match:
+            branch_label, symbol, relative = match.groups()
+            rel_int = int(relative)
+            if rel_int >= 0:
+                assert symbol is not None, "Can't go up with a downgrade"
+                return branch_label, self.walk_up(
+                    symbol, rel_int, branch_label
+                )
+            else:
+                # FIXME test - ok warn if branch_label?
+                if symbol is None:
+                    current_revisions = util.to_tuple(current_revisions)
+                    if len(current_revisions) > 1:
+                        assert len(set(current_revisions)) == len(
+                            current_revisions
+                        ), (
+                            ":current_revisions contains duplicate entries %s"
+                            % str(current_revisions)
+                        )
+                        warnings.warn(
+                            "Deprecated: downgrade-1 from multiple "
+                            "heads is ambiguous",
+                            DeprecationWarning,
+                        )
+                    symbol = current_revisions[0]
+                return branch_label, self.walk_down(symbol, rel_int, relative)
+        elif "@" in target:
+            branch_label, _, symbol = target.partition("@")
+            return branch_label, self.get_revision(symbol)
+        else:
+            return None, self.get_revision(target)
+
+    def _parse_upgrade_target(self, current_revisions, target):
+        current_revisions = util.to_tuple(current_revisions)
+        assert target is not None, "Can't upgrade to nothing/base"
+        if isinstance(target, compat.string_types):
+            match = _relative_destination.match(target)
             if match:
                 branch_label, symbol, relative = match.groups()
-                rel_int = int(relative)
-                if rel_int >= 0:
-                    return branch_label, self.walk_up(
-                        symbol, rel_int, branch_label
-                    )
-                else:
+                relative = int(relative)
+                if relative > 0:
                     if symbol is None:
-                        uppers = util.to_tuple(upper)
-                        if len(uppers) > 1:
-                            assert len(set(uppers)) == len(
-                                uppers
-                            ), ":uppers contains duplicate entries %s" % str(
-                                uppers
-                            )
-                            warnings.warn(
-                                "Deprecated: downgrade-1 from multiple "
-                                "heads is ambiguous",
-                                DeprecationWarning,
-                            )
-                        symbol = uppers[0]
-                    return branch_label, self.walk_down(
-                        symbol, rel_int, relative
+                        # TODO Some tests should hit this for upgrading a
+                        # branch with multiple current revs?
+                        assert len(current_revisions) == 1, "Ambiguous upgrade"
+                        return self.walk_up(
+                            start=current_revisions[0],
+                            steps=relative,
+                            branch_label=branch_label,
+                        )
+                    else:
+                        # TODO test: symbol might be 'head'?
+                        return self.walk_up(
+                            start=self.get_revision(symbol),
+                            steps=relative,
+                            branch_label=branch_label,
+                        )
+                else:
+                    assert (
+                        symbol is not None
+                    ), "Can't upgrade downwards from current revisions"
+                    return self.walk_down(
+                        start=self.get_revision(symbol)
+                        if branch_label is None
+                        else self.get_revision(
+                            "%s@%s" % (branch_label, symbol)
+                        ),
+                        steps=relative,
                     )
-            elif "@" in lower:
-                branch_label, _, symbol = lower.partition("@")
-                return branch_label, self.get_revision(symbol)
+            elif "@" in target:
+                branch_label, _, symbol = target.partition("@")
+                return self.get_revision(target)
             else:
-                return None, self.get_revision(lower)
-        raise ValueError("Failed to parse downgrade input '%s'" % (lower))
+                return self.get_revisions(target)
+        else:
+            return self.get_revisions(target)
 
-    def _iterate_revisions_downgrade(self, upper, lower, inclusive=False):
+    def _iterate_revisions_downgrade(self, upper, target, inclusive=False):
 
-        branch_label, target_revision = self._parse_downgrade(upper, lower)
+        branch_label, target_revision = self._parse_downgrade_target(
+            current_revisions=upper, target=target
+        )
 
         # Find candidates to drop.
         if target_revision is None:
