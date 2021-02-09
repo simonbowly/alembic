@@ -790,6 +790,8 @@ class RevisionMap(object):
         )
         assert result is not None
         assert type(result) is tuple, f"{type(result)=}"
+        # Great!! Now just replace old code with set(required_deps) -
+        # set(all_current)
 
         relative_upper = self._relative_iterate(
             upper,
@@ -1011,6 +1013,19 @@ class RevisionMap(object):
         )
         return self.get_revisions(drop_reverse_topo_sorted)
 
+    def _assert_get_revision_handler(self, target):
+        """Little check to find cases get_revision doesn't handle (but
+        perhaps should)."""
+        try:
+            int(target)
+            # Don't expect get_revision to handle this; it's relative to
+            # current state.
+            return
+        except Exception:
+            pass
+        # This should handle every other case.
+        self.get_revisions(target)
+
     def _parse_downgrade_target(self, current_revisions, target):
         """Parse downgrade command syntax :target to retrieve the target
         revision and branch label (if any) given the :current_revisons stamp
@@ -1026,6 +1041,7 @@ class RevisionMap(object):
         To test: relative syntax to get back to base? e.g. branch1@-3 where
         branch1 has a 3-length path to base.
         """
+        # self._assert_get_revision_handler(target)
         if target is None:
             return None, None
         assert isinstance(
@@ -1065,6 +1081,7 @@ class RevisionMap(object):
             return None, self.get_revision(target)
 
     def _parse_upgrade_target(self, current_revisions, target):
+        # self._assert_get_revision_handler(target)
         current_revisions = util.to_tuple(current_revisions)
         assert target is not None, "Can't upgrade to nothing/base"
         if isinstance(target, compat.string_types):
@@ -1114,6 +1131,9 @@ class RevisionMap(object):
         branch_label, target_revision = self._parse_downgrade_target(
             current_revisions=upper, target=target
         )
+        # FIXME ever a need to return a tuple? Probably want to downgrade
+        # one path at a time in all cases.
+        assert target_revision is None or isinstance(target_revision, Revision)
 
         # Find candidates to drop.
         if target_revision is None:
