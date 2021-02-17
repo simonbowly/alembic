@@ -751,6 +751,35 @@ class RevisionMap(object):
 
         return iter(revs)
 
+    def _iterate_revisions_upgrade(self, upper, lower):
+        targets = util.to_tuple(
+            self._parse_upgrade_target(current_revisions=lower, target=upper)
+        )
+        assert targets is not None
+        assert type(targets) is tuple, f"{type(targets)=} (should be tuple)"
+        required_node_set = set(
+            self._get_ancestor_nodes(
+                targets, check=True, include_dependencies=True
+            )
+        ).union(set(targets))
+
+        current_revisions = self.get_revisions(lower)
+        assert (
+            type(current_revisions) is tuple
+        ), f"{type(current_revisions)=} (should be tuple)"
+        current_node_set = set(
+            self._get_ancestor_nodes(
+                current_revisions, check=True, include_dependencies=True
+            )
+        ).union(set(current_revisions))
+
+        # Unsure why ScriptDirectory.upgrade_revs reverses this once it gets
+        # it?
+        for node in reversed(
+            list(self.topological_sort(required_node_set - current_node_set))
+        ):
+            yield self.get_revision(node)
+
     def iterate_revisions(
         self,
         upper,
@@ -785,13 +814,9 @@ class RevisionMap(object):
                 upper, lower, inclusive=inclusive
             )
 
-        result = util.to_tuple(
-            self._parse_upgrade_target(current_revisions=lower, target=upper)
-        )
-        assert result is not None
-        assert type(result) is tuple, f"{type(result)=}"
-        # Great!! Now just replace old code with set(required_deps) -
-        # set(all_current)
+        new_result = list(self._iterate_revisions_upgrade(upper, lower))
+
+        return new_result
 
         relative_upper = self._relative_iterate(
             upper,
@@ -815,13 +840,20 @@ class RevisionMap(object):
         if relative_lower:
             return relative_lower
 
-        return self._iterate_revisions(
-            upper,
-            lower,
-            inclusive=inclusive,
-            implicit_base=implicit_base,
-            select_for_downgrade=select_for_downgrade,
+        old_result = list(
+            self._iterate_revisions(
+                upper,
+                lower,
+                inclusive=inclusive,
+                implicit_base=implicit_base,
+                select_for_downgrade=select_for_downgrade,
+            )
         )
+
+        print(f"{set(new_result) - set(old_result)=}")
+        print(f"{set(old_result) - set(new_result)=}")
+
+        return old_result
 
     def _get_descendant_nodes(
         self,
@@ -911,7 +943,9 @@ class RevisionMap(object):
     def topological_sort(self, revisions, reverse=False):
         """Yield revision ids of a collection of Revision objects in
         topological sorted order (i.e. revisions always come after their
-        down_revisions and dependencies)."""
+        down_revisions and dependencies).
+        NB: converts Revisions to their ID's which is inconsistent?
+        """
         allitems = [d.revision for d in revisions]
         edges = [
             (rev, child.revision)
@@ -924,7 +958,9 @@ class RevisionMap(object):
             if child.dependencies is not None
             for parent in util.to_tuple(child.dependencies)
         ]
-        return sqlautil.topological.sort(edges, allitems)
+        return sqlautil.topological.sort(
+            edges, sorted(allitems), deterministic_order=True
+        )
 
     def walk_down(self, start, steps, label=None):
         """ Walk down the tree along a single path. """
