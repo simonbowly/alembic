@@ -345,6 +345,7 @@ class ScriptDirectory(object):
         return list(self.revision_map.bases)
 
     def _upgrade_revs(self, destination, current_rev):
+        # FIXME why does this reverse things???
         with self._catch_revision_errors(
             ancestor="Destination %(end)s is not a valid upgrade "
             "target from current head(s)",

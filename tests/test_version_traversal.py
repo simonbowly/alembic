@@ -1,3 +1,5 @@
+import itertools
+
 from alembic import util
 from alembic.migration import HeadMaintainer
 from alembic.migration import MigrationStep
@@ -9,6 +11,14 @@ from alembic.testing.assertions import _expect_warnings
 from alembic.testing.env import clear_staging_env
 from alembic.testing.env import staging_env
 from alembic.testing.fixtures import TestBase
+
+
+# Patch rev_id to provide a consistent ordering. Makes topo-sort for
+# ordering upgrades consistent.
+counter = itertools.accumulate(itertools.repeat(1))
+util.rev_id = lambda: str(next(counter))
+# TODO remove the set comparison for downgrade; get ordering consistent.
+# TODO look at weird branch label dependency case?
 
 
 class MigrationTest(TestBase):
@@ -286,10 +296,10 @@ class BranchedPathTest(MigrationTest):
             self.a.revision,
             [
                 self.up_(self.b),
-                self.up_(self.c2),
-                self.up_(self.d2),
                 self.up_(self.c1),
+                self.up_(self.c2),
                 self.up_(self.d1),
+                self.up_(self.d2),
             ],
             set([self.d1.revision, self.d2.revision]),
         )
@@ -607,7 +617,7 @@ class BranchFrom3WayMergepointTest(MigrationTest):
         self._assert_upgrade(
             self.d1.revision,
             (self.d3.revision, self.b2.revision, self.b1.revision),
-            [self.up_(self.c2), self.up_(self.c1), self.up_(self.d1)],
+            [self.up_(self.c1), self.up_(self.c2), self.up_(self.d1)],
             # this will merge b2 and b1 into d1
             set([self.d3.revision, self.d1.revision]),
         )
@@ -1124,10 +1134,10 @@ class ForestTest(MigrationTest):
         eq_(
             self.env._upgrade_revs("heads", "base"),
             [
-                self.up_(self.a2),
-                self.up_(self.b2),
                 self.up_(self.a1),
+                self.up_(self.a2),
                 self.up_(self.b1),
+                self.up_(self.b2),
             ],
         )
 
@@ -1247,10 +1257,10 @@ class MergedPathTest(MigrationTest):
         eq_(
             self.env._upgrade_revs(self.f.revision, self.b.revision),
             [
-                self.up_(self.c2),
-                self.up_(self.d2),
                 self.up_(self.c1),  # b->c1, create new branch
+                self.up_(self.c2),
                 self.up_(self.d1),
+                self.up_(self.d2),
                 self.up_(self.e),  # d1/d2 -> e, merge branches
                 # (DELETE d2, UPDATE d1->e)
                 self.up_(self.f),
