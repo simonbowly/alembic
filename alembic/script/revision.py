@@ -751,7 +751,7 @@ class RevisionMap(object):
 
         return iter(revs)
 
-    def _iterate_revisions_upgrade(self, upper, lower):
+    def _iterate_revisions_upgrade(self, upper, lower, inclusive=False):
         targets = util.to_tuple(
             self._parse_upgrade_target(current_revisions=lower, target=upper)
         )
@@ -775,9 +775,10 @@ class RevisionMap(object):
 
         # Unsure why ScriptDirectory.upgrade_revs reverses this once it gets
         # it?
-        for node in reversed(
-            list(self.topological_sort(required_node_set - current_node_set))
-        ):
+        needs = required_node_set - current_node_set
+        if inclusive:
+            needs.update(set(self.get_revisions(lower)))
+        for node in reversed(list(self.topological_sort(needs))):
             yield self.get_revision(node)
 
     def iterate_revisions(
@@ -814,46 +815,9 @@ class RevisionMap(object):
                 upper, lower, inclusive=inclusive
             )
 
-        new_result = list(self._iterate_revisions_upgrade(upper, lower))
-
-        return new_result
-
-        relative_upper = self._relative_iterate(
-            upper,
-            lower,
-            True,
-            implicit_base,
-            inclusive,
-            assert_relative_length,
+        return self._iterate_revisions_upgrade(
+            upper, lower, inclusive=inclusive
         )
-        if relative_upper:
-            return relative_upper
-
-        relative_lower = self._relative_iterate(
-            lower,
-            upper,
-            False,
-            implicit_base,
-            inclusive,
-            assert_relative_length,
-        )
-        if relative_lower:
-            return relative_lower
-
-        old_result = list(
-            self._iterate_revisions(
-                upper,
-                lower,
-                inclusive=inclusive,
-                implicit_base=implicit_base,
-                select_for_downgrade=select_for_downgrade,
-            )
-        )
-
-        print(f"{set(new_result) - set(old_result)=}")
-        print(f"{set(old_result) - set(new_result)=}")
-
-        return old_result
 
     def _get_descendant_nodes(
         self,

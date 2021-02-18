@@ -606,7 +606,7 @@ class BranchTravellingTest(DownIterateTest):
         self._assert_iteration(
             "merge",
             "db1",
-            ["merge", "e2b1", "db1", "e2b2", "db2", "cb2", "b2"],
+            ["merge", "e2b2", "db2", "e2b1", "cb2", "db1", "b2"],
             implicit_base=True,
         )
 

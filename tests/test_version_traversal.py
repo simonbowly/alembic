@@ -5,7 +5,6 @@ from alembic.migration import HeadMaintainer
 from alembic.migration import MigrationStep
 from alembic.testing import assert_raises_message
 from alembic.testing import eq_
-from alembic.testing import exclusions
 from alembic.testing import mock
 from alembic.testing.assertions import _expect_warnings
 from alembic.testing.env import clear_staging_env
@@ -30,10 +29,7 @@ class MigrationTest(TestBase):
 
     def _assert_downgrade(self, destination, source, expected, expected_heads):
         revs = self.env._downgrade_revs(destination, source)
-        rev_ids = {r.revision.revision for r in revs}
-        exp_ids = {r.revision.revision for r in expected}
-        eq_(rev_ids, exp_ids)
-        # eq_(revs, expected)
+        eq_(revs, expected)
         heads = set(util.to_tuple(source, default=()))
         head = HeadMaintainer(mock.Mock(), heads)
         for rev in revs:
@@ -112,8 +108,6 @@ class RevisionPathTest(MigrationTest):
             set([self.b.revision]),
         )
 
-    # Just needs error message fixes.
-    @exclusions.fails()
     def test_invalid_relative_upgrade_path(self):
 
         assert_raises_message(
@@ -175,8 +169,6 @@ class RevisionPathTest(MigrationTest):
             set([self.a.revision]),
         )
 
-    # Just needs error message fixes
-    @exclusions.fails()
     def test_invalid_relative_downgrade_path(self):
 
         assert_raises_message(
@@ -309,10 +301,10 @@ class BranchedPathTest(MigrationTest):
             self.a.revision,
             (self.d1.revision, self.d2.revision),
             [
-                self.down_(self.d1),
-                self.down_(self.c1),
                 self.down_(self.d2),
+                self.down_(self.d1),
                 self.down_(self.c2),
+                self.down_(self.c1),
                 self.down_(self.b),
             ],
             set([self.a.revision]),
@@ -333,8 +325,8 @@ class BranchedPathTest(MigrationTest):
             [self.d2.revision, self.d1.revision],
             [
                 self.down_(self.d2),
-                self.down_(self.c2),
                 self.down_(self.d1),
+                self.down_(self.c2),
                 self.down_(self.c1),
             ],
             set([self.b.revision]),
@@ -960,16 +952,16 @@ class DependsOnBranchTestTwo(MigrationTest):
             "base",
             heads,
             [
-                self.down_(self.amerge),
-                self.down_(self.a1),
-                self.down_(self.a2),
-                self.down_(self.a3),
-                self.down_(self.b1),
-                self.down_(self.b2),
                 self.down_(self.cmerge),
-                self.down_(self.c1),
-                self.down_(self.c2),
+                self.down_(self.amerge),
                 self.down_(self.c3),
+                self.down_(self.c2),
+                self.down_(self.c1),
+                self.down_(self.b2),
+                self.down_(self.b1),
+                self.down_(self.a3),
+                self.down_(self.a2),
+                self.down_(self.a1),
             ],
             set([]),
         )
@@ -1080,7 +1072,12 @@ class DependsOnBranchLabelTest(MigrationTest):
             util.rev_id(), "a2->b2", head=cls.a2.revision
         )
         cls.c2 = env.generate_revision(
-            util.rev_id(), "b2->c2", head=cls.b2.revision, depends_on=["c1lib"]
+            # What does this guarantee exactly? Does it depend on the head
+            # of the branch? What if it changes?
+            util.rev_id(),
+            "b2->c2",
+            head=cls.b2.revision,
+            depends_on=["c1lib"],
         )
 
         cls.d1 = env.generate_revision(
@@ -1103,10 +1100,10 @@ class DependsOnBranchLabelTest(MigrationTest):
             self.a2.revision,
             [
                 self.up_(self.a1),
-                self.up_(self.b1),
-                self.up_(self.c1),
                 self.up_(self.b2),
+                self.up_(self.b1),
                 self.up_(self.c2),
+                self.up_(self.c1),
             ],
             set([self.c2.revision]),
         )
@@ -1270,24 +1267,16 @@ class MergedPathTest(MigrationTest):
     def test_downgrade_across_merge_point(self):
 
         eq_(
-            {
-                rev.revision.revision
-                for rev in self.env._downgrade_revs(
-                    self.b.revision, self.f.revision
-                )
-            },
-            {
-                rev.revision.revision
-                for rev in [
-                    self.down_(self.f),
-                    self.down_(self.e),  # e -> d1 and d2, unmerge branches
-                    # (UPDATE e->d1, INSERT d2)
-                    self.down_(self.d1),
-                    self.down_(self.c1),
-                    self.down_(self.d2),
-                    self.down_(self.c2),  # c2->b, delete branch
-                ]
-            },
+            self.env._downgrade_revs(self.b.revision, self.f.revision),
+            [
+                self.down_(self.f),
+                self.down_(self.e),  # e -> d1 and d2, unmerge branches
+                # (UPDATE e->d1, INSERT d2)
+                self.down_(self.d2),
+                self.down_(self.d1),
+                self.down_(self.c2),  # c2->b, delete branch
+                self.down_(self.c1),
+            ],
         )
 
 
