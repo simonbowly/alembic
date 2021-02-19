@@ -821,11 +821,8 @@ class RevisionMap(object):
                 "assert_relative_length + select_for_downgrade "
                 "in iterate_revisions"
             )
-            assert (
-                not implicit_base
-            ), "implicit_base + select_for_downgrade in iterate_revisions"
             return self._iterate_revisions_downgrade(
-                upper, lower, inclusive=inclusive
+                upper, lower, inclusive=inclusive, implicit_base=implicit_base
             )
 
         return self._iterate_revisions_upgrade(
@@ -997,7 +994,7 @@ class RevisionMap(object):
 
         return start
 
-    def _drop_inclusive(self, branch_revision, upper):
+    def _drop_inclusive(self, branch_revision, upper, *, implicit_base):
         # Aim then is to drop :branch_revision; to do so we also need
         # to drop its descendents and anything dependent on it.
         drop_revisions = set(
@@ -1016,6 +1013,15 @@ class RevisionMap(object):
 
         # Emit revisions to drop in reverse topological sorted order.
         drop_revisions = drop_revisions.intersection(active_revisions)
+
+        # Basically this indicates - drop everything not underneath these
+        # target revisions...? Is this the correct interpretation of
+        # implicit_base?
+        if implicit_base:
+            drop_revisions = drop_revisions.union(
+                active_revisions
+                - set(self._get_ancestor_nodes(branch_revision))
+            )
 
         if len(drop_revisions) == 0:
             # Empty intersection: target revs are not present.
@@ -1139,7 +1145,9 @@ class RevisionMap(object):
         else:
             return self.get_revisions(target)
 
-    def _iterate_revisions_downgrade(self, upper, target, inclusive=False):
+    def _iterate_revisions_downgrade(
+        self, upper, target, *, inclusive, implicit_base
+    ):
 
         branch_label, target_revision = self._parse_downgrade_target(
             current_revisions=upper, target=target
@@ -1184,7 +1192,9 @@ class RevisionMap(object):
         # Ensure we didn't throw everything away.
         assert len(roots) > 0, "No revisions identified to downgrade."
 
-        for rev in self._drop_inclusive(roots, upper):
+        for rev in self._drop_inclusive(
+            roots, upper, implicit_base=implicit_base
+        ):
             yield rev
 
     def _iterate_revisions(
