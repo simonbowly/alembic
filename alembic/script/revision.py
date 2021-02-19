@@ -751,7 +751,9 @@ class RevisionMap(object):
 
         return iter(revs)
 
-    def _iterate_revisions_upgrade(self, upper, lower, inclusive=False):
+    def _iterate_revisions_upgrade(
+        self, upper, lower, *, inclusive, implicit_base
+    ):
         targets = util.to_tuple(
             self._parse_upgrade_target(current_revisions=lower, target=upper)
         )
@@ -776,8 +778,19 @@ class RevisionMap(object):
         # Unsure why ScriptDirectory.upgrade_revs reverses this once it gets
         # it?
         needs = required_node_set - current_node_set
+        # Include the lower revision (=current_revisions?) in the iteration
         if inclusive:
             needs.update(set(self.get_revisions(lower)))
+        # By default, base is implicit as we want all dependencies returned.
+        # Base is also implicit if lower = base implicit_base=False -> only
+        # return direct downstreams of current_revisions
+        if current_revisions and not implicit_base:
+            lower_descendents = set(
+                self._get_descendant_nodes(
+                    current_revisions, check=True, include_dependencies=False
+                )
+            )
+            needs = needs.intersection(lower_descendents)
         for node in reversed(list(self.topological_sort(needs))):
             yield self.get_revision(node)
 
@@ -816,7 +829,7 @@ class RevisionMap(object):
             )
 
         return self._iterate_revisions_upgrade(
-            upper, lower, inclusive=inclusive
+            upper, lower, inclusive=inclusive, implicit_base=implicit_base
         )
 
     def _get_descendant_nodes(
