@@ -456,6 +456,24 @@ class RevisionMap(object):
             return sum([self.get_revisions(id_elem) for id_elem in id_], ())
         else:
             resolved_id, branch_label = self._resolve_revision_number(id_)
+            if len(resolved_id) == 1:
+                try:
+                    rint = int(resolved_id[0])
+                    if rint < 0:
+                        # branch@-n -> walk down from heads
+                        select_heads = self.get_revisions("heads")
+                        if branch_label is not None:
+                            select_heads = [
+                                head
+                                for head in select_heads
+                                if branch_label in head.branch_labels
+                            ]
+                        return tuple(
+                            self.walk_down(head, steps=rint)
+                            for head in select_heads
+                        )
+                except ValueError:
+                    pass
             return tuple(
                 self._revision_for_ident(rev_id, branch_label)
                 for rev_id in resolved_id
@@ -759,6 +777,21 @@ class RevisionMap(object):
         )
         assert targets is not None
         assert type(targets) is tuple, f"{type(targets)=} (should be tuple)"
+
+        # Handled named bases (e.g. branch@... -> heads should only produce
+        # targets on the given branch)
+        if isinstance(lower, compat.string_types) and "@" in lower:
+            branch, _, _ = lower.partition("@")
+            branch_rev = self.get_revision(branch)
+            if branch_rev is not None and branch_rev.revision == branch:
+                # A revision was used as a label; get its branch instead
+                # TODO more general way to handle this?
+                assert len(branch_rev.branch_labels) == 1
+                branch = next(iter(branch_rev.branch_labels))
+            targets = {
+                need for need in targets if branch in need.branch_labels
+            }
+
         required_node_set = set(
             self._get_ancestor_nodes(
                 targets, check=True, include_dependencies=True
@@ -791,6 +824,7 @@ class RevisionMap(object):
                 )
             )
             needs = needs.intersection(lower_descendents)
+
         for node in reversed(list(self.topological_sort(needs))):
             yield self.get_revision(node)
 
@@ -898,7 +932,13 @@ class RevisionMap(object):
                 if rev in seen:
                     continue
                 seen.add(rev)
-                todo.extend(map_[rev_id] for rev_id in fn(rev))
+                for rev_id in fn(rev):
+                    next_rev = map_[rev_id]
+                    if next_rev.revision != rev_id:
+                        raise RevisionError(
+                            "Dependency resolution failed; broken map"
+                        )
+                    todo.append(next_rev)
                 yield rev
             if check:
                 overlaps = per_target.intersection(targets).difference(
@@ -936,24 +976,26 @@ class RevisionMap(object):
             edges, sorted(allitems), deterministic_order=True
         )
 
-    def walk_down(self, start, steps, label=None):
+    def walk_down(self, start, steps):
         """ Walk down the tree along a single path. """
         assert steps <= 0
+
+        assert start is not None, "Can't walk down from nowhere"
 
         if isinstance(start, compat.string_types):
             start = self.get_revision(start)
 
         for i in range(abs(steps)):
-            assert start is not None, "Walked past the base"
+            assert start is not None
             children = self.get_revisions(start.down_revision)
             if len(children) == 0:
-                # Fixme error message emitted from wrong function.
-                raise util.CommandError(
-                    "Relative revision %(label)s didn't produce "
-                    "%(abslabel)s migrations"
-                    % {"label": label, "abslabel": abs(int(label))}
+                raise RevisionError(
+                    "Relative reference tried to walk down past the base"
                 )
-            assert len(children) == 1, "Can't walk across a merge"
+            if len(children) > 1:
+                raise RevisionError(
+                    "Relative reference tried to walk down across a merge"
+                )
             start = children[0]
 
         return start
@@ -980,15 +1022,10 @@ class RevisionMap(object):
                 if (branch_label is None or branch_label in rev.branch_labels)
             ]
             # This shouldn't fire unless branch labels are duplicated?
-            assert len(children) <= 1, "No unambiguous revision"
-            if len(children) == 0:
-                # Fixme error message emitted from wrong function.
-                raise util.CommandError(
-                    "Relative revision +%(steps)d didn't produce "
-                    "%(steps)d migrations"
-                    % {
-                        "steps": steps,
-                    }
+            if len(children) != 1:
+                raise RevisionError(
+                    "Relative revision error; no unambiguous "
+                    "revision to walk up"
                 )
             start = children[0]
 
@@ -1071,12 +1108,11 @@ class RevisionMap(object):
             branch_label, symbol, relative = match.groups()
             rel_int = int(relative)
             if rel_int >= 0:
-                assert symbol is not None, "Can't go up with a downgrade"
                 return branch_label, self.walk_up(
                     symbol, rel_int, branch_label
                 )
             else:
-                # FIXME test - ok warn if branch_label?
+                # FIXME add a test - warning makes sense if branch_label?
                 if symbol is None:
                     current_revisions = util.to_tuple(current_revisions)
                     if len(current_revisions) > 1:
@@ -1092,7 +1128,7 @@ class RevisionMap(object):
                             DeprecationWarning,
                         )
                     symbol = current_revisions[0]
-                return branch_label, self.walk_down(symbol, rel_int, relative)
+                return branch_label, self.walk_down(symbol, steps=rel_int)
         elif "@" in target:
             branch_label, _, symbol = target.partition("@")
             return branch_label, self.get_revision(symbol)
@@ -1126,9 +1162,10 @@ class RevisionMap(object):
                             branch_label=branch_label,
                         )
                 else:
-                    assert (
-                        symbol is not None
-                    ), "Can't upgrade downwards from current revisions"
+                    if symbol is None and branch_label is None:
+                        raise RevisionError(
+                            "Relative revision x didn't produce x migrations"
+                        )
                     return self.walk_down(
                         start=self.get_revision(symbol)
                         if branch_label is None

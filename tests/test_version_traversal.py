@@ -1,5 +1,3 @@
-import itertools
-
 from alembic import util
 from alembic.migration import HeadMaintainer
 from alembic.migration import MigrationStep
@@ -12,12 +10,11 @@ from alembic.testing.env import staging_env
 from alembic.testing.fixtures import TestBase
 
 
-# Patch rev_id to provide a consistent ordering. Makes topo-sort for
-# ordering upgrades consistent.
-counter = itertools.accumulate(itertools.repeat(1))
-util.rev_id = lambda: str(next(counter))
-# TODO remove the set comparison for downgrade; get ordering consistent.
-# TODO look at weird branch label dependency case?
+def eq_rev_set(revs, expected):
+    # FIXME not ideal ... check sets equal + topo order ok?
+    revs = {r.revision.revision for r in revs}
+    expected = {r.revision.revision for r in expected}
+    eq_(revs, expected)
 
 
 class MigrationTest(TestBase):
@@ -29,7 +26,8 @@ class MigrationTest(TestBase):
 
     def _assert_downgrade(self, destination, source, expected, expected_heads):
         revs = self.env._downgrade_revs(destination, source)
-        eq_(revs, expected)
+        # eq_(revs, expected)
+        eq_rev_set(revs, expected)
         heads = set(util.to_tuple(source, default=()))
         head = HeadMaintainer(mock.Mock(), heads)
         for rev in revs:
@@ -38,7 +36,8 @@ class MigrationTest(TestBase):
 
     def _assert_upgrade(self, destination, source, expected, expected_heads):
         revs = self.env._upgrade_revs(destination, source)
-        eq_(revs, expected)
+        # eq_(revs, expected)
+        eq_rev_set(revs, expected)
         heads = set(util.to_tuple(source, default=()))
         head = HeadMaintainer(mock.Mock(), heads)
         for rev in revs:
@@ -1072,11 +1071,12 @@ class DependsOnBranchLabelTest(MigrationTest):
             util.rev_id(), "a2->b2", head=cls.a2.revision
         )
         cls.c2 = env.generate_revision(
-            # What does this guarantee exactly? Does it depend on the head
-            # of the branch? What if it changes?
             util.rev_id(),
             "b2->c2",
             head=cls.b2.revision,
+            # What does this guarantee exactly? Does it depend on the head
+            # of the branch? What if it changes, can the table state become
+            # out of step?
             depends_on=["c1lib"],
         )
 
@@ -1128,7 +1128,7 @@ class ForestTest(MigrationTest):
         clear_staging_env()
 
     def test_base_to_heads(self):
-        eq_(
+        eq_rev_set(
             self.env._upgrade_revs("heads", "base"),
             [
                 self.up_(self.a1),
@@ -1251,7 +1251,7 @@ class MergedPathTest(MigrationTest):
 
     def test_upgrade_across_merge_point(self):
 
-        eq_(
+        eq_rev_set(
             self.env._upgrade_revs(self.f.revision, self.b.revision),
             [
                 self.up_(self.c1),  # b->c1, create new branch
@@ -1266,7 +1266,7 @@ class MergedPathTest(MigrationTest):
 
     def test_downgrade_across_merge_point(self):
 
-        eq_(
+        eq_rev_set(
             self.env._downgrade_revs(self.b.revision, self.f.revision),
             [
                 self.down_(self.f),
