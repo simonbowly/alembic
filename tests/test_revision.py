@@ -368,9 +368,9 @@ class LabeledBranchTest(DownIterateTest):
         )
 
     def test_branch_w_up_relative(self):
-        self._assert_iteration(
-            "ebranch@+2", "base", ["someothername", "e", "d"]
-        )
+        # In the absence of a branch point surely the +2 is relative to base?
+        # So 'someothername' would be referenced by ebranch@+3?
+        self._assert_iteration("ebranch@+2", "base", ["e", "d"])
 
     def test_partial_id_resolve(self):
         eq_(self.map.get_revision("ebranch@some").revision, "someothername")
@@ -1028,7 +1028,10 @@ class MultipleBaseCrossDependencyTestOne(DownIterateTest):
         )
 
     def test_different_branch_not_wrong_direction(self):
-        self._assert_iteration("b3", "d2", [])
+        # Did this mean to have inclusive=False? Or should that be implied
+        # since d2 is not an ancestor of b3?
+        # Unsure of purpose of this one...
+        self._assert_iteration("b3", "d2", [], inclusive=False)
 
     def test_we_need_head2_upgrade(self):
         # the 2 branch relies on the 3 branch
@@ -1081,8 +1084,12 @@ class MultipleBaseCrossDependencyTestOne(DownIterateTest):
         # consider a downgrade to b_2@base - we
         # want to run through all the "2"s alone, and we're done.
         self._assert_iteration(
-            "heads", "b_2@base", ["d2", "c2", "b2", "a2", "base2"]
+            "heads",
+            "b_2@base",
+            ["d2", "c2", "b2", "a2", "base2", "a3", "base3"],
         )
+        # SB: this is an upgrade from base? so deps should be included and
+        # the result should be different to the downgrade case below?
 
     def test_we_need_base2_downgrade(self):
         # consider a downgrade to b_2@base - we
@@ -1112,6 +1119,8 @@ class MultipleBaseCrossDependencyTestOne(DownIterateTest):
         )
 
 
+# Need some clarification here re: behaviour of dependencies =
+# {branch_label}
 class MultipleBaseCrossDependencyTestTwo(DownIterateTest):
     def setUp(self):
         self.map = RevisionMap(

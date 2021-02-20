@@ -168,6 +168,7 @@ finally:
         command.history(self.cfg, "-2:%s" % (self.c), verbose=True)
         self._eq_cmd_output(buf, [self.c, self.b, self.a])
 
+    # Should this fail trying to point back past base?
     def test_history_too_large_relative_to_num(self):
         self.cfg.stdout = buf = self._buf_fixture()
         command.history(self.cfg, "-5:%s" % (self.c), verbose=True)
@@ -393,6 +394,7 @@ finally:
                 ),
             )
 
+    # Need to trace this error
     def test_err_correctly_raised_on_dupe_rows_no_pk(self):
         self._env_fixture(version_table_pk=False)
         command.revision(self.cfg)
@@ -471,6 +473,7 @@ finally:
         self._env_fixture()
         command.revision(self.cfg)
         rev2 = command.revision(self.cfg)
+        print(f"{rev2=}")
         assert len(rev2.revision) > 7
         rev3 = command.revision(self.cfg, depends_on=rev2.revision[0:4])
         eq_(rev3.dependencies, rev2.revision)
