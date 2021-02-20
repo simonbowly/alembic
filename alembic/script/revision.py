@@ -1164,7 +1164,8 @@ class RevisionMap(object):
                 else:
                     if symbol is None and branch_label is None:
                         raise RevisionError(
-                            "Relative revision x didn't produce x migrations"
+                            "Relative revision %s didn't "
+                            "produce %d migrations" % (relative, abs(relative))
                         )
                     return self.walk_down(
                         start=self.get_revision(symbol)
@@ -1248,9 +1249,6 @@ class RevisionMap(object):
         across branches as a whole.
 
         """
-        assert (
-            not select_for_downgrade
-        ), "select_for_downgrade in _iterate_revisions"
 
         requested_lowers = self.get_revisions(lower)
 

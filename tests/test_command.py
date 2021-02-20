@@ -473,7 +473,6 @@ finally:
         self._env_fixture()
         command.revision(self.cfg)
         rev2 = command.revision(self.cfg)
-        print(f"{rev2=}")
         assert len(rev2.revision) > 7
         rev3 = command.revision(self.cfg, depends_on=rev2.revision[0:4])
         eq_(rev3.dependencies, rev2.revision)
