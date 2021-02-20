@@ -287,10 +287,10 @@ class BranchedPathTest(MigrationTest):
             self.a.revision,
             [
                 self.up_(self.b),
-                self.up_(self.c1),
                 self.up_(self.c2),
-                self.up_(self.d1),
                 self.up_(self.d2),
+                self.up_(self.c1),
+                self.up_(self.d1),
             ],
             set([self.d1.revision, self.d2.revision]),
         )
@@ -300,16 +300,17 @@ class BranchedPathTest(MigrationTest):
             self.a.revision,
             (self.d1.revision, self.d2.revision),
             [
-                self.down_(self.d2),
                 self.down_(self.d1),
-                self.down_(self.c2),
                 self.down_(self.c1),
+                self.down_(self.d2),
+                self.down_(self.c2),
                 self.down_(self.b),
             ],
             set([self.a.revision]),
         )
 
     def test_relative_upgrade(self):
+
         self._assert_upgrade(
             "c2branch@head-1",
             self.b.revision,
@@ -608,7 +609,7 @@ class BranchFrom3WayMergepointTest(MigrationTest):
         self._assert_upgrade(
             self.d1.revision,
             (self.d3.revision, self.b2.revision, self.b1.revision),
-            [self.up_(self.c1), self.up_(self.c2), self.up_(self.d1)],
+            [self.up_(self.c2), self.up_(self.c1), self.up_(self.d1)],
             # this will merge b2 and b1 into d1
             set([self.d3.revision, self.d1.revision]),
         )
@@ -951,16 +952,16 @@ class DependsOnBranchTestTwo(MigrationTest):
             "base",
             heads,
             [
-                self.down_(self.cmerge),
                 self.down_(self.amerge),
-                self.down_(self.c3),
-                self.down_(self.c2),
-                self.down_(self.c1),
-                self.down_(self.b2),
-                self.down_(self.b1),
-                self.down_(self.a3),
-                self.down_(self.a2),
                 self.down_(self.a1),
+                self.down_(self.a2),
+                self.down_(self.a3),
+                self.down_(self.b1),
+                self.down_(self.b2),
+                self.down_(self.cmerge),
+                self.down_(self.c1),
+                self.down_(self.c2),
+                self.down_(self.c3),
             ],
             set([]),
         )
@@ -1100,10 +1101,10 @@ class DependsOnBranchLabelTest(MigrationTest):
             self.a2.revision,
             [
                 self.up_(self.a1),
-                self.up_(self.b2),
                 self.up_(self.b1),
-                self.up_(self.c2),
                 self.up_(self.c1),
+                self.up_(self.b2),
+                self.up_(self.c2),
             ],
             set([self.c2.revision]),
         )
@@ -1131,10 +1132,10 @@ class ForestTest(MigrationTest):
         eq_rev_set(
             self.env._upgrade_revs("heads", "base"),
             [
-                self.up_(self.a1),
                 self.up_(self.a2),
-                self.up_(self.b1),
                 self.up_(self.b2),
+                self.up_(self.a1),
+                self.up_(self.b1),
             ],
         )
 
@@ -1254,10 +1255,10 @@ class MergedPathTest(MigrationTest):
         eq_rev_set(
             self.env._upgrade_revs(self.f.revision, self.b.revision),
             [
-                self.up_(self.c1),  # b->c1, create new branch
                 self.up_(self.c2),
-                self.up_(self.d1),
                 self.up_(self.d2),
+                self.up_(self.c1),  # b->c1, create new branch
+                self.up_(self.d1),
                 self.up_(self.e),  # d1/d2 -> e, merge branches
                 # (DELETE d2, UPDATE d1->e)
                 self.up_(self.f),
