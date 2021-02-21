@@ -1078,7 +1078,10 @@ class DependsOnBranchLabelTest(MigrationTest):
             # What does this guarantee exactly? Does it depend on the head
             # of the branch? What if it changes, can the table state become
             # out of step?
-            depends_on=["c1lib"],
+            depends_on=["c1lib"],  # Fails
+            # The below passes; revision set is the same but heads result
+            # is different
+            # depends_on=[cls.c1.revision],
         )
 
         cls.d1 = env.generate_revision(

@@ -770,7 +770,7 @@ class RevisionMap(object):
         return iter(revs)
 
     def _iterate_revisions_upgrade(
-        self, upper, lower, *, inclusive, implicit_base, assert_relative_length
+        self, upper, lower, inclusive, implicit_base, assert_relative_length
     ):
         targets = util.to_tuple(
             self._parse_upgrade_target(
@@ -781,7 +781,7 @@ class RevisionMap(object):
         )
 
         assert targets is not None
-        assert type(targets) is tuple, f"{type(targets)=} (should be tuple)"
+        assert type(targets) is tuple, "targets should be a tuple"
 
         # Handled named bases (e.g. branch@... -> heads should only produce
         # targets on the given branch)
@@ -806,7 +806,7 @@ class RevisionMap(object):
         current_revisions = self.get_revisions(lower)
         assert (
             type(current_revisions) is tuple
-        ), f"{type(current_revisions)=} (should be tuple)"
+        ), "current_revisions should be a tuple"
 
         # Special case where lower = a relative value so get_revisions can't
         # find it?
@@ -1045,7 +1045,7 @@ class RevisionMap(object):
 
         return start
 
-    def _drop_inclusive(self, branch_revision, upper, *, implicit_base):
+    def _drop_inclusive(self, branch_revision, upper, implicit_base):
         # Aim then is to drop :branch_revision; to do so we also need
         # to drop its descendents and anything dependent on it.
         drop_revisions = set(
@@ -1232,13 +1232,7 @@ class RevisionMap(object):
             return self.get_revisions(target)
 
     def _iterate_revisions_downgrade(
-        self,
-        upper,
-        target,
-        *,
-        inclusive,
-        implicit_base,
-        assert_relative_length,
+        self, upper, target, inclusive, implicit_base, assert_relative_length
     ):
 
         branch_label, target_revision = self._parse_downgrade_target(
