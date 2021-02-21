@@ -770,11 +770,16 @@ class RevisionMap(object):
         return iter(revs)
 
     def _iterate_revisions_upgrade(
-        self, upper, lower, *, inclusive, implicit_base
+        self, upper, lower, *, inclusive, implicit_base, assert_relative_length
     ):
         targets = util.to_tuple(
-            self._parse_upgrade_target(current_revisions=lower, target=upper)
+            self._parse_upgrade_target(
+                current_revisions=lower,
+                target=upper,
+                assert_relative_length=assert_relative_length,
+            )
         )
+
         assert targets is not None
         assert type(targets) is tuple, f"{type(targets)=} (should be tuple)"
 
@@ -802,6 +807,18 @@ class RevisionMap(object):
         assert (
             type(current_revisions) is tuple
         ), f"{type(current_revisions)=} (should be tuple)"
+
+        # Special case where lower = a relative value so get_revisions can't
+        # find it?
+        if current_revisions and current_revisions[0] is None:
+            _, rev = self._parse_downgrade_target(
+                current_revisions=upper,
+                target=lower,
+                assert_relative_length=assert_relative_length,
+            )
+            current_revisions = (rev,)
+            lower = rev.revision
+
         current_node_set = set(
             self._get_ancestor_nodes(
                 current_revisions, check=True, include_dependencies=True
@@ -848,20 +865,22 @@ class RevisionMap(object):
         The iterator yields :class:`.Revision` objects.
 
         """
-
         if select_for_downgrade:
-            # Discarded options.
-            assert assert_relative_length, (
-                "assert_relative_length + select_for_downgrade "
-                "in iterate_revisions"
-            )
             return self._iterate_revisions_downgrade(
-                upper, lower, inclusive=inclusive, implicit_base=implicit_base
+                upper,
+                lower,
+                inclusive=inclusive,
+                implicit_base=implicit_base,
+                assert_relative_length=assert_relative_length,
             )
-
-        return self._iterate_revisions_upgrade(
-            upper, lower, inclusive=inclusive, implicit_base=implicit_base
-        )
+        else:
+            return self._iterate_revisions_upgrade(
+                upper,
+                lower,
+                inclusive=inclusive,
+                implicit_base=implicit_base,
+                assert_relative_length=assert_relative_length,
+            )
 
     def _get_descendant_nodes(
         self,
@@ -976,7 +995,7 @@ class RevisionMap(object):
             edges, sorted(allitems), deterministic_order=True
         )
 
-    def walk_down(self, start, steps):
+    def walk_down(self, start, steps, no_overwalk=True):
         """ Walk down the tree along a single path. """
         assert steps <= 0
 
@@ -989,14 +1008,14 @@ class RevisionMap(object):
             assert start is not None
             children = self.get_revisions(start.down_revision)
             if len(children) == 0:
-                return None
+                return None if no_overwalk else start
             if len(children) > 1:
                 raise RevisionError("Tried to walk down across a merge")
             start = children[0]
 
         return start
 
-    def walk_up(self, start, steps, branch_label):
+    def walk_up(self, start, steps, branch_label, no_overwalk=True):
         """ Walk up the tree along a single path. """
         assert steps >= 0
 
@@ -1018,7 +1037,7 @@ class RevisionMap(object):
                 if (branch_label is None or branch_label in rev.branch_labels)
             ]
             if len(children) == 0:
-                return None
+                return None if no_overwalk else start
             # This shouldn't fire unless branch labels are duplicated?
             if len(children) > 1:
                 raise RevisionError("Tried to walk up across a branch")
@@ -1077,7 +1096,9 @@ class RevisionMap(object):
         # This should handle every other case.
         self.get_revisions(target)
 
-    def _parse_downgrade_target(self, current_revisions, target):
+    def _parse_downgrade_target(
+        self, current_revisions, target, assert_relative_length
+    ):
         """Parse downgrade command syntax :target to retrieve the target
         revision and branch label (if any) given the :current_revisons stamp
         of the database.
@@ -1108,7 +1129,12 @@ class RevisionMap(object):
                         "Relative revision %s didn't "
                         "produce %d migrations" % (relative, abs(rel_int))
                     )
-                rev = self.walk_up(symbol, rel_int, branch_label)
+                rev = self.walk_up(
+                    symbol,
+                    rel_int,
+                    branch_label,
+                    no_overwalk=assert_relative_length,
+                )
                 if rev is None:
                     raise RevisionError("Walked too far")
                 return branch_label, rev
@@ -1126,7 +1152,9 @@ class RevisionMap(object):
                             DeprecationWarning,
                         )
                     symbol = current_revisions[0]
-                rev = self.walk_down(symbol, steps=rel_int)
+                rev = self.walk_down(
+                    symbol, steps=rel_int, no_overwalk=assert_relative_length
+                )
                 if rev is None:
                     if relative_revision:
                         raise RevisionError(
@@ -1142,7 +1170,9 @@ class RevisionMap(object):
         else:
             return None, self.get_revision(target)
 
-    def _parse_upgrade_target(self, current_revisions, target):
+    def _parse_upgrade_target(
+        self, current_revisions, target, assert_relative_length
+    ):
         # self._assert_get_revision_handler(target)
         current_revisions = util.to_tuple(current_revisions)
         assert target is not None, "Can't upgrade to nothing/base"
@@ -1161,6 +1191,7 @@ class RevisionMap(object):
                             start=current_revisions[0],
                             steps=relative,
                             branch_label=branch_label,
+                            no_overwalk=assert_relative_length,
                         )
                         if rev is None:
                             raise RevisionError(
@@ -1175,6 +1206,7 @@ class RevisionMap(object):
                             start=self.get_revision(symbol),
                             steps=relative,
                             branch_label=branch_label,
+                            no_overwalk=assert_relative_length,
                         )
                 else:
                     if symbol is None:
@@ -1189,6 +1221,7 @@ class RevisionMap(object):
                             "%s@%s" % (branch_label, symbol)
                         ),
                         steps=relative,
+                        no_overwalk=assert_relative_length,
                     )
             elif "@" in target:
                 branch_label, _, symbol = target.partition("@")
@@ -1199,11 +1232,19 @@ class RevisionMap(object):
             return self.get_revisions(target)
 
     def _iterate_revisions_downgrade(
-        self, upper, target, *, inclusive, implicit_base
+        self,
+        upper,
+        target,
+        *,
+        inclusive,
+        implicit_base,
+        assert_relative_length,
     ):
 
         branch_label, target_revision = self._parse_downgrade_target(
-            current_revisions=upper, target=target
+            current_revisions=upper,
+            target=target,
+            assert_relative_length=assert_relative_length,
         )
         # FIXME ever a need to return a tuple? Probably want to downgrade
         # one path at a time in all cases.
