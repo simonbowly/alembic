@@ -989,13 +989,9 @@ class RevisionMap(object):
             assert start is not None
             children = self.get_revisions(start.down_revision)
             if len(children) == 0:
-                raise RevisionError(
-                    "Relative reference tried to walk down past the base"
-                )
+                return None
             if len(children) > 1:
-                raise RevisionError(
-                    "Relative reference tried to walk down across a merge"
-                )
+                raise RevisionError("Tried to walk down across a merge")
             start = children[0]
 
         return start
@@ -1021,12 +1017,11 @@ class RevisionMap(object):
                 for rev in candidates
                 if (branch_label is None or branch_label in rev.branch_labels)
             ]
+            if len(children) == 0:
+                return None
             # This shouldn't fire unless branch labels are duplicated?
-            if len(children) != 1:
-                raise RevisionError(
-                    "Relative revision error; no unambiguous "
-                    "revision to walk up"
-                )
+            if len(children) > 1:
+                raise RevisionError("Tried to walk up across a branch")
             start = children[0]
 
         return start
@@ -1108,27 +1103,39 @@ class RevisionMap(object):
             branch_label, symbol, relative = match.groups()
             rel_int = int(relative)
             if rel_int >= 0:
-                return branch_label, self.walk_up(
-                    symbol, rel_int, branch_label
-                )
+                if symbol is None:
+                    raise RevisionError(
+                        "Relative revision %s didn't "
+                        "produce %d migrations" % (relative, abs(rel_int))
+                    )
+                rev = self.walk_up(symbol, rel_int, branch_label)
+                if rev is None:
+                    raise RevisionError("Walked too far")
+                return branch_label, rev
             else:
                 # FIXME add a test - warning makes sense if branch_label?
+                # What about `alembic downgrade branch@-2` ?
+                relative_revision = symbol is None
                 if symbol is None:
                     current_revisions = util.to_tuple(current_revisions)
-                    if len(current_revisions) > 1:
-                        assert len(set(current_revisions)) == len(
-                            current_revisions
-                        ), (
-                            ":current_revisions contains duplicate entries %s"
-                            % str(current_revisions)
-                        )
+                    # Have to check uniques here for duplicate rows test.
+                    if len(set(current_revisions)) > 1:
                         warnings.warn(
                             "Deprecated: downgrade-1 from multiple "
                             "heads is ambiguous",
                             DeprecationWarning,
                         )
                     symbol = current_revisions[0]
-                return branch_label, self.walk_down(symbol, steps=rel_int)
+                rev = self.walk_down(symbol, steps=rel_int)
+                if rev is None:
+                    if relative_revision:
+                        raise RevisionError(
+                            "Relative revision %s didn't "
+                            "produce %d migrations" % (relative, abs(rel_int))
+                        )
+                    else:
+                        raise RevisionError("Walked too far")
+                return branch_label, rev
         elif "@" in target:
             branch_label, _, symbol = target.partition("@")
             return branch_label, self.get_revision(symbol)
@@ -1143,17 +1150,25 @@ class RevisionMap(object):
             match = _relative_destination.match(target)
             if match:
                 branch_label, symbol, relative = match.groups()
+                relative_str = relative
                 relative = int(relative)
                 if relative > 0:
                     if symbol is None:
                         # TODO Some tests should hit this for upgrading a
                         # branch with multiple current revs?
                         assert len(current_revisions) == 1, "Ambiguous upgrade"
-                        return self.walk_up(
+                        rev = self.walk_up(
                             start=current_revisions[0],
                             steps=relative,
                             branch_label=branch_label,
                         )
+                        if rev is None:
+                            raise RevisionError(
+                                "Relative revision %s didn't "
+                                "produce %d migrations"
+                                % (relative_str, abs(relative))
+                            )
+                        return rev
                     else:
                         # TODO test: symbol might be 'head'?
                         return self.walk_up(
@@ -1162,7 +1177,7 @@ class RevisionMap(object):
                             branch_label=branch_label,
                         )
                 else:
-                    if symbol is None and branch_label is None:
+                    if symbol is None:
                         raise RevisionError(
                             "Relative revision %s didn't "
                             "produce %d migrations" % (relative, abs(relative))
