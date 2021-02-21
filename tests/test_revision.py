@@ -1102,9 +1102,8 @@ class MultipleBaseCrossDependencyTestOne(DownIterateTest):
         )
 
     def test_we_need_base3_upgrade(self):
-        self._assert_iteration(
-            "heads", "b_3@base", ["b1b", "d2", "c2", "b3", "a3", "base3"]
-        )
+        # SB: branch b_3 has no dependencies, so b1b/d2/c2 not needed?
+        self._assert_iteration("heads", "b_3@base", ["b3", "a3", "base3"])
 
     def test_we_need_base3_downgrade(self):
         # consider a downgrade to b_3@base - due to the a3 dependency, we
@@ -1119,8 +1118,6 @@ class MultipleBaseCrossDependencyTestOne(DownIterateTest):
         )
 
 
-# Need some clarification here re: behaviour of dependencies =
-# {branch_label}
 class MultipleBaseCrossDependencyTestTwo(DownIterateTest):
     def setUp(self):
         self.map = RevisionMap(
@@ -1183,6 +1180,7 @@ class MultipleBaseCrossDependencyTestTwo(DownIterateTest):
         self._assert_iteration("b_1@head", "base", ["c1", "b1", "a1", "base1"])
 
     def test_we_need_base1(self):
+        # SB: b_1 has no dependencies
         self._assert_iteration(
             "heads",
             "b_1@base",
@@ -1190,25 +1188,25 @@ class MultipleBaseCrossDependencyTestTwo(DownIterateTest):
                 "c1",
                 "b1",
                 "a1",
-                "d2",
-                "c2",
-                "d3",
-                "c3",
-                "b2",
-                "a2",
-                "base2",
                 "base1",
             ],
         )
 
     def test_we_need_base2(self):
+        # SB base2 depends on base1, nobody depends on b_3 so removed d3,c3
+        # Clarify: since base2 depends on b_1; does it require all of
+        # base1->c1?
         self._assert_iteration(
-            "heads", "b_2@base", ["d2", "c2", "d3", "c3", "b2", "a2", "base2"]
+            "heads", "b_2@base", ["d2", "c2", "b2", "a2", "base2", "base1"]
         )
 
     def test_we_need_base3(self):
+        # SB: c3 depends on b2 -> add b2,a2,base2, base2 depends on base1
+        # UNLESS the intention of b_3@base is to also skip all dependencies?
         self._assert_iteration(
-            "heads", "b_3@base", ["d3", "c3", "b3", "a3", "base3"]
+            "heads",
+            "b_3@base",
+            ["d3", "c3", "b3", "a3", "base3", "b2", "a2", "base2", "base1"],
         )
 
 
