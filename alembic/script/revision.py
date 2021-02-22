@@ -983,13 +983,7 @@ class RevisionMap(object):
         edges = [
             (rev, child.revision)
             for child in revisions
-            if child.down_revision is not None
-            for rev in util.to_tuple(child.down_revision)
-        ] + [
-            (parent, child.revision)
-            for child in revisions
-            if child.dependencies is not None
-            for parent in util.to_tuple(child.dependencies)
+            for rev in child._normalized_down_revisions
         ]
         return sqlautil.topological.sort(
             edges, sorted(allitems), deterministic_order=True
