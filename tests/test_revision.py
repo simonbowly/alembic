@@ -1088,7 +1088,7 @@ class MultipleBaseCrossDependencyTestOne(DownIterateTest):
             "b_2@base",
             ["d2", "c2", "b2", "a2", "base2", "a3", "base3"],
         )
-        # SB: this is an upgrade from base? so deps should be included and
+        # This is an upgrade from base? so deps should be included and
         # the result should be different to the downgrade case below?
 
     def test_we_need_base2_downgrade(self):
@@ -1102,7 +1102,7 @@ class MultipleBaseCrossDependencyTestOne(DownIterateTest):
         )
 
     def test_we_need_base3_upgrade(self):
-        # SB: branch b_3 has no dependencies, so b1b/d2/c2 not needed?
+        # branch b_3 has no dependencies, so b1b/d2/c2 not needed?
         self._assert_iteration("heads", "b_3@base", ["b3", "a3", "base3"])
 
     def test_we_need_base3_downgrade(self):
@@ -1180,7 +1180,7 @@ class MultipleBaseCrossDependencyTestTwo(DownIterateTest):
         self._assert_iteration("b_1@head", "base", ["c1", "b1", "a1", "base1"])
 
     def test_we_need_base1(self):
-        # SB: b_1 has no dependencies
+        # b_1 has no dependencies
         self._assert_iteration(
             "heads",
             "b_1@base",
@@ -1193,16 +1193,13 @@ class MultipleBaseCrossDependencyTestTwo(DownIterateTest):
         )
 
     def test_we_need_base2(self):
-        # SB base2 depends on base1, nobody depends on b_3 so removed d3,c3
-        # Clarify: since base2 depends on b_1; does it require all of
-        # base1->c1?
+        # base2 depends on base1, nobody depends on b_3 so removed d3,c3
         self._assert_iteration(
             "heads", "b_2@base", ["d2", "c2", "b2", "a2", "base2", "base1"]
         )
 
     def test_we_need_base3(self):
-        # SB: c3 depends on b2 -> add b2,a2,base2, base2 depends on base1
-        # UNLESS the intention of b_3@base is to also skip all dependencies?
+        # c3 depends on b2 -> add b2,a2,base2, base2 depends on base1
         self._assert_iteration(
             "heads",
             "b_3@base",
