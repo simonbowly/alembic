@@ -144,7 +144,9 @@ class RevisionMap(object):
         initial collection.
 
         """
-        map_ = {}
+        # Ordering required for some tests to pass (but not required in
+        # general)
+        map_ = sqlautil.OrderedDict()
 
         heads = sqlautil.OrderedSet()
         _real_heads = sqlautil.OrderedSet()
