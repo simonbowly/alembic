@@ -10,13 +10,6 @@ from alembic.testing.env import staging_env
 from alembic.testing.fixtures import TestBase
 
 
-def eq_rev_set(revs, expected):
-    # FIXME not ideal ... check sets equal + topo order ok?
-    revs = {r.revision.revision for r in revs}
-    expected = {r.revision.revision for r in expected}
-    eq_(revs, expected)
-
-
 class MigrationTest(TestBase):
     def up_(self, rev):
         return MigrationStep.upgrade_from_script(self.env.revision_map, rev)
@@ -26,8 +19,7 @@ class MigrationTest(TestBase):
 
     def _assert_downgrade(self, destination, source, expected, expected_heads):
         revs = self.env._downgrade_revs(destination, source)
-        # eq_(revs, expected)
-        eq_rev_set(revs, expected)
+        eq_(revs, expected)
         heads = set(util.to_tuple(source, default=()))
         head = HeadMaintainer(mock.Mock(), heads)
         for rev in revs:
@@ -36,8 +28,7 @@ class MigrationTest(TestBase):
 
     def _assert_upgrade(self, destination, source, expected, expected_heads):
         revs = self.env._upgrade_revs(destination, source)
-        # eq_(revs, expected)
-        eq_rev_set(revs, expected)
+        eq_(revs, expected)
         heads = set(util.to_tuple(source, default=()))
         head = HeadMaintainer(mock.Mock(), heads)
         for rev in revs:
@@ -288,8 +279,8 @@ class BranchedPathTest(MigrationTest):
             [
                 self.up_(self.b),
                 self.up_(self.c2),
-                self.up_(self.d2),
                 self.up_(self.c1),
+                self.up_(self.d2),
                 self.up_(self.d1),
             ],
             set([self.d1.revision, self.d2.revision]),
@@ -301,8 +292,8 @@ class BranchedPathTest(MigrationTest):
             (self.d1.revision, self.d2.revision),
             [
                 self.down_(self.d1),
-                self.down_(self.c1),
                 self.down_(self.d2),
+                self.down_(self.c1),
                 self.down_(self.c2),
                 self.down_(self.b),
             ],
@@ -324,10 +315,10 @@ class BranchedPathTest(MigrationTest):
             "base+2",
             [self.d2.revision, self.d1.revision],
             [
-                self.down_(self.d2),
                 self.down_(self.d1),
-                self.down_(self.c2),
+                self.down_(self.d2),
                 self.down_(self.c1),
+                self.down_(self.c2),
             ],
             set([self.b.revision]),
         )
@@ -341,10 +332,7 @@ class BranchedPathTest(MigrationTest):
         self._assert_downgrade(
             "c2branch@base+2",
             [self.d2.revision, self.d1.revision],
-            [
-                self.down_(self.d2),
-                self.down_(self.c2),
-            ],
+            [self.down_(self.d2), self.down_(self.c2)],
             set([self.d1.revision]),
         )
 
@@ -953,12 +941,12 @@ class DependsOnBranchTestTwo(MigrationTest):
             heads,
             [
                 self.down_(self.amerge),
+                self.down_(self.cmerge),
                 self.down_(self.a1),
                 self.down_(self.a2),
                 self.down_(self.a3),
                 self.down_(self.b1),
                 self.down_(self.b2),
-                self.down_(self.cmerge),
                 self.down_(self.c1),
                 self.down_(self.c2),
                 self.down_(self.c3),
@@ -1072,16 +1060,7 @@ class DependsOnBranchLabelTest(MigrationTest):
             util.rev_id(), "a2->b2", head=cls.a2.revision
         )
         cls.c2 = env.generate_revision(
-            util.rev_id(),
-            "b2->c2",
-            head=cls.b2.revision,
-            # What does this guarantee exactly? Does it depend on the head
-            # of the branch? What if it changes, can the table state become
-            # out of step?
-            depends_on=["c1lib"],  # Fails
-            # The below passes; revision set is the same but heads result
-            # is different
-            # depends_on=[cls.c1.revision],
+            util.rev_id(), "b2->c2", head=cls.b2.revision, depends_on=["c1lib"]
         )
 
         cls.d1 = env.generate_revision(
@@ -1103,10 +1082,10 @@ class DependsOnBranchLabelTest(MigrationTest):
             self.c2.revision,
             self.a2.revision,
             [
+                self.up_(self.b2),
                 self.up_(self.a1),
                 self.up_(self.b1),
                 self.up_(self.c1),
-                self.up_(self.b2),
                 self.up_(self.c2),
             ],
             set([self.c2.revision]),
@@ -1132,12 +1111,12 @@ class ForestTest(MigrationTest):
         clear_staging_env()
 
     def test_base_to_heads(self):
-        eq_rev_set(
+        eq_(
             self.env._upgrade_revs("heads", "base"),
             [
                 self.up_(self.a2),
-                self.up_(self.b2),
                 self.up_(self.a1),
+                self.up_(self.b2),
                 self.up_(self.b1),
             ],
         )
@@ -1255,12 +1234,12 @@ class MergedPathTest(MigrationTest):
 
     def test_upgrade_across_merge_point(self):
 
-        eq_rev_set(
+        eq_(
             self.env._upgrade_revs(self.f.revision, self.b.revision),
             [
                 self.up_(self.c2),
-                self.up_(self.d2),
                 self.up_(self.c1),  # b->c1, create new branch
+                self.up_(self.d2),
                 self.up_(self.d1),
                 self.up_(self.e),  # d1/d2 -> e, merge branches
                 # (DELETE d2, UPDATE d1->e)
@@ -1270,16 +1249,16 @@ class MergedPathTest(MigrationTest):
 
     def test_downgrade_across_merge_point(self):
 
-        eq_rev_set(
+        eq_(
             self.env._downgrade_revs(self.b.revision, self.f.revision),
             [
                 self.down_(self.f),
                 self.down_(self.e),  # e -> d1 and d2, unmerge branches
                 # (UPDATE e->d1, INSERT d2)
-                self.down_(self.d2),
                 self.down_(self.d1),
-                self.down_(self.c2),  # c2->b, delete branch
+                self.down_(self.d2),
                 self.down_(self.c1),
+                self.down_(self.c2),  # c2->b, delete branch
             ],
         )
 

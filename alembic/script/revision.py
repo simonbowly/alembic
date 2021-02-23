@@ -973,11 +973,11 @@ class RevisionMap(object):
                         )
                     )
 
-    def topological_sort(self, revisions, reverse=False):
+    def topological_sort(self, revisions):
         """Yield revision ids of a collection of Revision objects in
         topological sorted order (i.e. revisions always come after their
-        down_revisions and dependencies).
-        NB: converts Revisions to their ID's which is inconsistent?
+        down_revisions and dependencies). Uses the order of keys in
+        _revision_map to sort.
         """
         allitems = [d.revision for d in revisions]
         edges = [
@@ -985,8 +985,11 @@ class RevisionMap(object):
             for child in revisions
             for rev in child._normalized_down_revisions
         ]
+        inserted_order = list(self._revision_map)
         return sqlautil.topological.sort(
-            edges, sorted(allitems), deterministic_order=True
+            edges,
+            sorted(allitems, key=inserted_order.index, reverse=True),
+            deterministic_order=True,
         )
 
     def walk_down(self, start, steps, no_overwalk=True):
