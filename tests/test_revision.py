@@ -173,20 +173,6 @@ class APITest(TestBase):
         )
         eq_(map_.get_revision("base"), None)
 
-    def test_iterate_tolerates_dupe_targets(self):
-        map_ = RevisionMap(
-            lambda: [
-                Revision("a", ()),
-                Revision("b", ("a",)),
-                Revision("c", ("b",)),
-            ]
-        )
-
-        eq_(
-            [r.revision for r in map_._iterate_revisions(("c", "c"), "a")],
-            ["c", "b", "a"],
-        )
-
     def test_repr_revs(self):
         map_ = RevisionMap(
             lambda: [
@@ -515,45 +501,6 @@ class MultipleBranchTest(DownIterateTest):
             ["d1cb1", "d2cb2", "d3cb2"], "b2", ["d2cb2", "d3cb2", "cb2", "b2"]
         )
 
-    def test_same_branch_wrong_direction(self):
-        # nodes b1 and d1cb1 are connected, but
-        # db1cb1 is the descendant of b1
-        assert_raises_message(
-            RevisionError,
-            r"Revision d1cb1 is not an ancestor of revision b1",
-            list,
-            self.map._iterate_revisions("b1", "d1cb1"),
-        )
-
-    def test_distinct_branches(self):
-        # nodes db2cb2 and b1 have no path to each other
-        assert_raises_message(
-            RevisionError,
-            r"Revision b1 is not an ancestor of revision d2cb2",
-            list,
-            self.map._iterate_revisions("d2cb2", "b1"),
-        )
-
-    def test_wrong_direction_to_base_as_none(self):
-        # this needs to raise and not just return empty iteration
-        # as added by #258
-        assert_raises_message(
-            RevisionError,
-            r"Revision d1cb1 is not an ancestor of revision base",
-            list,
-            self.map._iterate_revisions(None, "d1cb1"),
-        )
-
-    def test_wrong_direction_to_base_as_empty(self):
-        # this needs to raise and not just return empty iteration
-        # as added by #258
-        assert_raises_message(
-            RevisionError,
-            r"Revision d1cb1 is not an ancestor of revision base",
-            list,
-            self.map._iterate_revisions((), "d1cb1"),
-        )
-
 
 class BranchTravellingTest(DownIterateTest):
     """test the order of revs when going along multiple branches.
@@ -719,16 +666,6 @@ class BranchTravellingTest(DownIterateTest):
             inclusive=False,
         )
 
-    def test_detect_invalid_head_selection(self):
-        # db1 is an ancestor of fe1b1
-        assert_raises_message(
-            RevisionError,
-            "Requested revision fe1b1 overlaps "
-            "with other requested revisions",
-            list,
-            self.map._iterate_revisions(["db1", "b2", "fe1b1"], ()),
-        )
-
     def test_three_branches_end_multiple_bases_exclusive_blank(self):
         self._assert_iteration(
             ["e2b1", "b2", "fe1b1"],
@@ -870,14 +807,6 @@ class MultipleBaseTest(DownIterateTest):
             ],
         )
 
-    def test_detect_invalid_base_selection(self):
-        assert_raises_message(
-            RevisionError,
-            "Requested revision a2 overlaps with " "other requested revisions",
-            list,
-            self.map._iterate_revisions(["c2"], ["a2", "b2"]),
-        )
-
     def test_heads_to_revs_plus_implicit_base_exclusive(self):
         self._assert_iteration(
             "heads",
@@ -1017,14 +946,6 @@ class MultipleBaseCrossDependencyTestOne(DownIterateTest):
                 "base1",
             ],
             select_for_downgrade=True,
-        )
-
-    def test_same_branch_wrong_direction(self):
-        assert_raises_message(
-            RevisionError,
-            r"Revision d2 is not an ancestor of revision b2",
-            list,
-            self.map._iterate_revisions("b2", "d2"),
         )
 
     def test_different_branch_not_wrong_direction(self):

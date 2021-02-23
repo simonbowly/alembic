@@ -678,99 +678,6 @@ class RevisionMap(object):
         else:
             return util.to_tuple(id_, default=None), branch_label
 
-    def _relative_iterate(
-        self,
-        destination,
-        source,
-        is_upwards,
-        implicit_base,
-        inclusive,
-        assert_relative_length,
-    ):
-        if isinstance(destination, compat.string_types):
-            match = _relative_destination.match(destination)
-            if not match:
-                return None
-        else:
-            return None
-
-        relative = int(match.group(3))
-        symbol = match.group(2)
-        branch_label = match.group(1)
-
-        reldelta = 1 if inclusive and not symbol else 0
-
-        if is_upwards:
-            if branch_label:
-                from_ = "%s@head" % branch_label
-            elif symbol:
-                if symbol.startswith("head"):
-                    from_ = symbol
-                else:
-                    from_ = "%s@head" % symbol
-            else:
-                from_ = "head"
-            to_ = source
-        else:
-            if branch_label:
-                to_ = "%s@base" % branch_label
-            elif symbol:
-                to_ = "%s@base" % symbol
-            else:
-                to_ = "base"
-            from_ = source
-
-        revs = list(
-            self._iterate_revisions(
-                from_, to_, inclusive=inclusive, implicit_base=implicit_base
-            )
-        )
-
-        if symbol:
-            if branch_label:
-                symbol_rev = self.get_revision(
-                    "%s@%s" % (branch_label, symbol)
-                )
-            else:
-                symbol_rev = self.get_revision(symbol)
-            if symbol.startswith("head"):
-                index = 0
-            elif symbol == "base":
-                index = len(revs) - 1
-            else:
-                range_ = compat.range(len(revs) - 1, 0, -1)
-                for index in range_:
-                    if symbol_rev.revision == revs[index].revision:
-                        break
-                else:
-                    index = 0
-        else:
-            index = 0
-        if is_upwards:
-            revs = revs[index - relative - reldelta :]
-            if (
-                not index
-                and assert_relative_length
-                and len(revs) < abs(relative - reldelta)
-            ):
-                raise RevisionError(
-                    "Relative revision %s didn't "
-                    "produce %d migrations" % (destination, abs(relative))
-                )
-        else:
-            revs = revs[0 : index - relative + reldelta]
-            if (
-                not index
-                and assert_relative_length
-                and len(revs) != abs(relative) + reldelta
-            ):
-                raise RevisionError(
-                    "Relative revision %s didn't "
-                    "produce %d migrations" % (destination, abs(relative))
-                )
-
-        return iter(revs)
-
     def iterate_revisions(
         self,
         upper,
@@ -1187,7 +1094,6 @@ class RevisionMap(object):
             branch_rev = self.get_revision(branch)
             if branch_rev is not None and branch_rev.revision == branch:
                 # A revision was used as a label; get its branch instead
-                # TODO more general way to handle this?
                 assert len(branch_rev.branch_labels) == 1
                 branch = next(iter(branch_rev.branch_labels))
             targets = {
@@ -1205,8 +1111,8 @@ class RevisionMap(object):
             type(current_revisions) is tuple
         ), "current_revisions should be a tuple"
 
-        # Special case where lower = a relative value so get_revisions can't
-        # find it?
+        # Special case where lower = a relative value (get_revisions can't
+        # find it)
         if current_revisions and current_revisions[0] is None:
             _, rev = self._parse_downgrade_target(
                 current_revisions=upper,
@@ -1239,177 +1145,6 @@ class RevisionMap(object):
 
         for node in reversed(list(self.topological_sort(needs))):
             yield self.get_revision(node)
-
-    def _iterate_revisions(
-        self,
-        upper,
-        lower,
-        inclusive=True,
-        implicit_base=False,
-        select_for_downgrade=False,
-    ):
-        """iterate revisions from upper to lower.
-
-        The traversal is depth-first within branches, and breadth-first
-        across branches as a whole.
-
-        """
-
-        requested_lowers = self.get_revisions(lower)
-
-        # some complexity to accommodate an iteration where some
-        # branches are starting from nothing, and others are starting
-        # from a given point.  Additionally, if the bottom branch
-        # is specified using a branch identifier, then we limit operations
-        # to just that branch.
-
-        limit_to_lower_branch = isinstance(
-            lower, compat.string_types
-        ) and lower.endswith("@base")
-
-        uppers = util.dedupe_tuple(self.get_revisions(upper))
-
-        if not uppers and not requested_lowers:
-            return
-
-        upper_ancestors = set(self._get_ancestor_nodes(uppers, check=True))
-
-        if limit_to_lower_branch:
-            lowers = self.get_revisions(self._get_base_revisions(lower))
-        elif implicit_base and requested_lowers:
-            lower_ancestors = set(self._get_ancestor_nodes(requested_lowers))
-            lower_descendants = set(
-                self._get_descendant_nodes(requested_lowers)
-            )
-            base_lowers = set()
-            candidate_lowers = upper_ancestors.difference(
-                lower_ancestors
-            ).difference(lower_descendants)
-            for rev in candidate_lowers:
-                # note: the use of _normalized_down_revisions as opposed
-                # to _all_down_revisions repairs
-                # an issue related to looking at a revision in isolation
-                # when updating the alembic_version table (issue #789).
-                # however, while it seems likely that using
-                # _normalized_down_revisions within traversal is more correct
-                # than _all_down_revisions, we don't yet have any case to
-                # show that it actually makes a difference.
-                for downrev in rev._normalized_down_revisions:
-                    if self._revision_map[downrev] in candidate_lowers:
-                        break
-                else:
-                    base_lowers.add(rev)
-            lowers = base_lowers.union(requested_lowers)
-        elif implicit_base:
-            base_lowers = set(self.get_revisions(self._real_bases))
-            lowers = base_lowers.union(requested_lowers)
-        elif not requested_lowers:
-            lowers = set(self.get_revisions(self._real_bases))
-        else:
-            lowers = requested_lowers
-
-        # represents all nodes we will produce
-        total_space = set(
-            rev.revision for rev in upper_ancestors
-        ).intersection(
-            rev.revision
-            for rev in self._get_descendant_nodes(
-                lowers,
-                check=True,
-                omit_immediate_dependencies=(
-                    select_for_downgrade and requested_lowers
-                ),
-            )
-        )
-
-        if not total_space:
-            # no nodes.  determine if this is an invalid range
-            # or not.
-            start_from = set(requested_lowers)
-            start_from.update(
-                self._get_ancestor_nodes(
-                    list(start_from), include_dependencies=True
-                )
-            )
-
-            # determine all the current branch points represented
-            # by requested_lowers
-            start_from = self._filter_into_branch_heads(start_from)
-
-            # if the requested start is one of those branch points,
-            # then just return empty set
-            if start_from.intersection(upper_ancestors):
-                return
-            else:
-                # otherwise, they requested nodes out of
-                # order
-                raise RangeNotAncestorError(lower, upper)
-
-        # organize branch points to be consumed separately from
-        # member nodes
-        branch_todo = set(
-            rev
-            for rev in (self._revision_map[rev] for rev in total_space)
-            if rev._is_real_branch_point
-            and len(total_space.intersection(rev._all_nextrev)) > 1
-        )
-
-        # it's not possible for any "uppers" to be in branch_todo,
-        # because the ._all_nextrev of those nodes is not in total_space
-        # assert not branch_todo.intersection(uppers)
-
-        todo = collections.deque(
-            r for r in uppers if r.revision in total_space
-        )
-
-        # iterate for total_space being emptied out
-        total_space_modified = True
-        while total_space:
-
-            if not total_space_modified:
-                raise RevisionError(
-                    "Dependency resolution failed; iteration can't proceed"
-                )
-            total_space_modified = False
-            # when everything non-branch pending is consumed,
-            # add to the todo any branch nodes that have no
-            # descendants left in the queue
-            if not todo:
-                todo.extendleft(
-                    sorted(
-                        (
-                            rev
-                            for rev in branch_todo
-                            if not rev._all_nextrev.intersection(total_space)
-                        ),
-                        # favor "revisioned" branch points before
-                        # dependent ones
-                        key=lambda rev: 0 if rev.is_branch_point else 1,
-                    )
-                )
-                branch_todo.difference_update(todo)
-            # iterate nodes that are in the immediate todo
-            while todo:
-                rev = todo.popleft()
-                total_space.remove(rev.revision)
-                total_space_modified = True
-
-                # do depth first for elements within branches,
-                # don't consume any actual branch nodes
-                todo.extendleft(
-                    [
-                        self._revision_map[downrev]
-                        for downrev in reversed(rev._normalized_down_revisions)
-                        if self._revision_map[downrev] not in branch_todo
-                        and downrev in total_space
-                    ]
-                )
-
-                if not inclusive and rev in requested_lowers:
-                    continue
-                yield rev
-
-        assert not branch_todo
 
 
 class Revision(object):
