@@ -495,13 +495,39 @@ class RevisionMap(object):
 
         """
 
-        resolved_id, branch_label = self._resolve_revision_number(id_)
+        # Possible patch for
+        #   alembic upgrade "head-n":"head"
+        #   alembic upgrade "{rev_id}-n":"head"
+        #   alembic upgrade "branch@head-1":"branch@head"
+        # Basically, current_revisions needs to be able to be specified as relative
+        # for the --sql case (not gathered from environment). But could this break
+        # some expected behaviours in get_revision, should it go somewhere else?
+        match = _relative_destination.match(id_)
+        if match:
+            branch_label, rev_id, relative = match.groups()
+            resolved_id, branch_label = self._resolve_revision_number(
+                f"{rev_id}@{branch_label}" if branch_label else rev_id
+            )
+        else:
+            resolved_id, branch_label = self._resolve_revision_number(id_)
+            relative = None
+
         if len(resolved_id) > 1:
             raise MultipleHeads(resolved_id, id_)
         elif resolved_id:
             resolved_id = resolved_id[0]
 
-        return self._revision_for_ident(resolved_id, branch_label)
+        revision = self._revision_for_ident(resolved_id, branch_label)
+        if relative:
+            revision = self._walk(
+                start=revision,
+                steps=int(relative),
+                branch_label=branch_label,
+                no_overwalk=True,
+            )
+            assert revision is not None
+
+        return revision
 
     def _resolve_branch(self, branch_label):
         try:
